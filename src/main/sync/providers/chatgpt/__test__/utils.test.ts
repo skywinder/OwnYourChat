@@ -4,6 +4,68 @@ import type { SourceUrlPart, TextPart } from '@shared/types'
 import conversationData from './chatgpt-conversation.json'
 
 describe('transformChatGPTMessageToParts', () => {
+  it('preserves all sources in current grouped citations, including supporting websites', () => {
+    const marker = '\uE200cite\uE202turn608629search0\uE202turn608629search1\uE201'
+    const result = transformChatGPTMessageToParts({
+      content: `Evidence ${marker}.`,
+      contentReferences: [
+        {
+          type: 'grouped_webpages',
+          matched_text: marker,
+          items: [
+            {
+              title: 'Primary',
+              url: 'https://example.com/primary',
+              supporting_websites: [
+                { title: 'Supporting', url: 'https://example.com/supporting' },
+                { url: 'https://example.com/primary' }
+              ]
+            }
+          ]
+        }
+      ]
+    })
+    expect(result.filter((p) => p.type === 'source-url').map((p) => p.url)).toEqual([
+      'https://example.com/primary',
+      'https://example.com/supporting'
+    ])
+    expect(result.filter((p) => p.type === 'text')).toEqual([
+      { type: 'text', text: 'Evidence ' },
+      { type: 'text', text: '.' }
+    ])
+  })
+
+  it('supports fallback items and repeated current markers', () => {
+    const marker = '\uE200cite\uE202turn608629search0\uE201'
+    const result = transformChatGPTMessageToParts({
+      content: `${marker} and ${marker}`,
+      contentReferences: [
+        {
+          type: 'grouped_webpages',
+          matched_text: marker,
+          items: [],
+          fallback_items: [{ url: 'https://example.com/source' }]
+        }
+      ]
+    })
+    expect(result.filter((p) => p.type === 'source-url')).toHaveLength(2)
+    expect(result.filter((p) => p.type === 'text')).toEqual([{ type: 'text', text: ' and ' }])
+  })
+
+  it('retains unresolved modern citations and rejects non-web URLs', () => {
+    const marker = '\uE200cite\uE202turn608629search0\uE201'
+    for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'not a URL']) {
+      const result = transformChatGPTMessageToParts({
+        content: marker,
+        contentReferences: [{ type: 'grouped_webpages', matched_text: marker, items: [{ url }] }]
+      })
+      expect(result).toEqual([{ type: 'text', text: marker }])
+    }
+    expect(transformChatGPTMessageToParts({ content: marker })).toEqual([
+      { type: 'text', text: marker }
+    ])
+  })
+
   it('should transform message without citations into single text part', () => {
     const input = {
       content: 'This is a simple message without any citations.',
