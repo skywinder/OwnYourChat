@@ -7,9 +7,10 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
 import type { MessagePart, SourceUrlPart } from '../../../shared/types'
-import { CHATGPT_CITATION_PATTERN } from '../../../shared/citations'
+import { CHATGPT_DISPLAY_CITATION_PATTERN } from '../../../shared/citations'
 import { buildMessageMarkdown } from '../lib/message-markdown'
 import { CitationPill } from './CitationPill'
+import { FileCitationPill } from './FileCitationPill'
 
 // Custom sanitization schema
 const sanitizeSchema: Schema = {
@@ -68,9 +69,15 @@ const MarkdownPart = memo(
         if (typeof child === 'string') {
           const nodes: React.ReactNode[] = []
           let offset = 0
-          for (const match of child.matchAll(new RegExp(CHATGPT_CITATION_PATTERN))) {
+          for (const match of child.matchAll(new RegExp(CHATGPT_DISPLAY_CITATION_PATTERN))) {
             nodes.push(child.slice(offset, match.index))
-            nodes.push(<CitationPill key={`missing-${match.index}`} reference={{}} />)
+            nodes.push(
+              match[0].startsWith('\uE200filecite\uE202') ? (
+                <FileCitationPill key={`file-${match.index}`} marker={match[0]} />
+              ) : (
+                <CitationPill key={`missing-${match.index}`} reference={{}} />
+              )
+            )
             offset = match.index + match[0].length
           }
           return offset ? [...nodes, child.slice(offset)] : child
