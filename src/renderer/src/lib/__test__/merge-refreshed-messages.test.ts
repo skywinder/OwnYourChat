@@ -15,10 +15,12 @@ const message = (orderIndex: number): Message => ({
 })
 
 describe('mergeRefreshedMessages', () => {
-  it('updates sources without requiring a new message', () => {
+  it('updates content and metadata without requiring a new message', () => {
     const old = message(1)
     const refreshed: Message = {
       ...old,
+      model: 'gpt-4o',
+      metadata: { finishReason: 'stop' },
       parts: [{ type: 'source-url', sourceId: 'source', url: 'https://example.com' }]
     }
     expect(mergeRefreshedMessages([old], [refreshed])).toEqual([refreshed])

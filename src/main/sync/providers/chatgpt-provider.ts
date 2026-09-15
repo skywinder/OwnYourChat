@@ -1,3 +1,4 @@
+import { chatgptMessageMetadata } from './message-metadata'
 import { WebContentsView, session } from 'electron'
 import { BaseProvider, type SyncResult, type ProviderName } from './base'
 import type { IStorage } from '../../storage/interface'
@@ -44,6 +45,8 @@ export interface ExtractedMessage {
   contentType?: string
   createdAt?: Date
   modelSlug?: string
+  updatedAt?: Date
+  finishReason?: string
   attachments?: ExtractedAttachment[]
   contentReferences?: ExtractedContentReference[]
   parentNodeId: string | null
@@ -228,6 +231,7 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
           role: msg.role,
           parts: JSON.stringify(parts),
           createdAt: msg.createdAt,
+          ...chatgptMessageMetadata(msg),
           orderIndex: index,
           parentId: msg.parentNodeId,
           siblingIds: JSON.stringify(msg.siblingNodeIds),
@@ -740,6 +744,8 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
           contentType: msg.contentType,
           createdAt: msg.createdAt ? new Date(msg.createdAt) : undefined,
           modelSlug: msg.modelSlug,
+          updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : undefined,
+          finishReason: msg.finishReason,
           attachments: msg.attachments,
           contentReferences: msg.contentReferences,
           parentNodeId: msg.parentNodeId || null,
@@ -787,6 +793,7 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
         role: msg.role,
         parts: JSON.stringify(parts),
         createdAt: msg.createdAt,
+        ...chatgptMessageMetadata(msg),
         orderIndex: index,
         parentId: msg.parentNodeId,
         siblingIds: JSON.stringify(msg.siblingNodeIds),
@@ -994,7 +1001,9 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
             content: '',
             contentType: contentType,
             createdAt: msg.create_time ? msg.create_time * 1000 : null,
-            modelSlug: undefined,
+            updatedAt: msg.update_time ? msg.update_time * 1000 : null,
+            finishReason: msg.metadata?.finish_details?.type,
+            modelSlug: msg.metadata?.model_slug,
             attachments: attachments,
             contentReferences: undefined,
             parentNodeId: parentNodeId,
@@ -1094,6 +1103,8 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
             content: content,
             contentType: contentType,
             createdAt: msg.create_time ? msg.create_time * 1000 : null,
+            updatedAt: msg.update_time ? msg.update_time * 1000 : null,
+            finishReason: msg.metadata?.finish_details?.type,
             modelSlug: msg.metadata?.model_slug,
             attachments: attachments.length > 0 ? attachments : undefined,
             contentReferences: contentReferences,
