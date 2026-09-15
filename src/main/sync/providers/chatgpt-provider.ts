@@ -3,14 +3,13 @@ import { BaseProvider, type SyncResult, type ProviderName } from './base'
 import type { IStorage } from '../../storage/interface'
 import type { ChatGPTMetadata } from './types'
 import { getMainWindow } from '../../index'
+import { viewBoundsManager } from '../../view-bounds-manager'
 import { IPC_CHANNELS } from '@shared/types'
 import { findCachedFile, getExtensionFromMimeType } from '../attachment-utils.js'
 import { getAttachmentsPath } from '../../settings.js'
-import { transformChatGPTMessageToParts } from './chatgpt/utils'
+import { transformChatGPTMessageToParts, type ChatGPTContentReference } from './chatgpt/utils'
 import fs from 'fs'
 import path from 'path'
-
-const TOOLBAR_HEIGHT = 40
 
 // ============================================================================
 // TYPES - Exported for external use
@@ -35,14 +34,7 @@ export interface ExtractedAttachment {
   size?: number
 }
 
-export interface ExtractedContentReference {
-  matched_text: string
-  type: 'webpage' | 'webpage_extended' | 'image_inline'
-  title?: string
-  url?: string
-  snippet?: string
-  attribution?: string
-}
+export type ExtractedContentReference = ChatGPTContentReference
 
 export interface ExtractedMessage {
   id: string
@@ -131,32 +123,19 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
   }
 
   showLogin(): void {
-    const mainWindow = getMainWindow()
-    if (!mainWindow || !this.view) return
+    if (!this.view) return
 
-    mainWindow.contentView.addChildView(this.view)
-
-    const bounds = mainWindow.getContentBounds()
-    this.view.setBounds({
-      x: 0,
-      y: 0,
-      width: bounds.width,
-      height: bounds.height - TOOLBAR_HEIGHT
-    })
-
+    viewBoundsManager.attachView(this.view, this.name)
     this.isViewVisible = true
     this.view.webContents.loadURL('https://chatgpt.com/')
 
-    mainWindow.on('resize', this.updateViewBounds)
     this.startLoginMonitor()
   }
 
   hideView(): void {
-    const mainWindow = getMainWindow()
-    if (!mainWindow || !this.view) return
+    if (!this.view) return
 
-    mainWindow.contentView.removeChildView(this.view)
-    mainWindow.off('resize', this.updateViewBounds)
+    viewBoundsManager.detachView(this.view)
     this.isViewVisible = false
   }
 
@@ -470,6 +449,9 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
         console.log(
           `[${this.name}] Processing ${pageConversations.length} conversations at offset ${offset}`
         )
+
+        // Report progress (offset is current position, result.total is total)
+        this.updateSyncProgress(offset, result.total, newChatsFound)
 
         // Process entire page atomically
         for (const conv of pageConversations) {
@@ -1091,7 +1073,7 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
           const rawRefs = msg.metadata?.content_references;
           if (rawRefs && Array.isArray(rawRefs) && rawRefs.length > 0) {
             contentReferences = rawRefs
-              .filter(ref => ref.type === 'webpage' || ref.type === 'webpage_extended' || ref.type === 'image_inline')
+              .filter(ref => ref.type === 'webpage' || ref.type === 'webpage_extended' || ref.type === 'image_inline' || ref.type === 'grouped_webpages')
               .map(ref => ({
                 matched_text: ref.matched_text,
                 type: ref.type,
@@ -1099,6 +1081,8 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
                 url: ref.url,
                 snippet: ref.snippet,
                 attribution: ref.attribution,
+                items: ref.items,
+                fallback_items: ref.fallback_items,
               }));
             if (contentReferences.length === 0) contentReferences = undefined;
           }
@@ -1265,6 +1249,15 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
     })
 
     const chatGPTSession = session.fromPartition('persist:chatgpt')
+    chatGPTSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      const allowedPermissions = ['hid', 'usb', 'clipboard-read', 'clipboard-sanitized-write']
+      callback(allowedPermissions.includes(permission))
+    })
+
+    chatGPTSession.setPermissionCheckHandler((_webContents, permission) => {
+      const allowedPermissions = ['hid', 'usb', 'clipboard-read', 'clipboard-sanitized-write']
+      return allowedPermissions.includes(permission)
+    })
 
     chatGPTSession.webRequest.onBeforeSendHeaders(
       { urls: ['*://chatgpt.com/backend-api/*', '*://chat.openai.com/backend-api/*'] },
@@ -1301,19 +1294,6 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
         }
       }
     )
-  }
-
-  private updateViewBounds = (): void => {
-    const mainWindow = getMainWindow()
-    if (!mainWindow || !this.view || !this.isViewVisible) return
-
-    const bounds = mainWindow.getContentBounds()
-    this.view.setBounds({
-      x: 0,
-      y: 0,
-      width: bounds.width,
-      height: bounds.height - TOOLBAR_HEIGHT
-    })
   }
 
   private startLoginMonitor(): void {

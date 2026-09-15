@@ -1,13 +1,20 @@
 import crypto from 'crypto'
 import type { MessagePart } from '@shared/types'
+import { CHATGPT_CITATION_PATTERN, isWebSourceUrl } from '../../../../shared/citations'
 
-export interface ChatGPTContentReference {
-  matched_text: string
-  type: 'webpage' | 'webpage_extended' | 'image_inline'
+type ChatGPTWebSource = {
   title?: string
   url?: string
   snippet?: string
   attribution?: string
+  supporting_websites?: ChatGPTWebSource[]
+}
+
+export interface ChatGPTContentReference extends ChatGPTWebSource {
+  matched_text: string
+  type: 'webpage' | 'webpage_extended' | 'image_inline' | 'grouped_webpages'
+  items?: ChatGPTWebSource[] | null
+  fallback_items?: ChatGPTWebSource[] | null
 }
 
 export interface ChatGPTMessageInput {
@@ -31,13 +38,11 @@ export function transformChatGPTMessageToParts(input: ChatGPTMessageInput): Mess
     }
   }
 
-  const CITATION_REGEX = /【(\d+)†[^】]+】/g
+  const citationRegex = new RegExp(CHATGPT_CITATION_PATTERN)
   let lastIndex = 0
   let match: RegExpExecArray | null
 
-  CITATION_REGEX.lastIndex = 0
-
-  while ((match = CITATION_REGEX.exec(content)) !== null) {
+  while ((match = citationRegex.exec(content)) !== null) {
     const matchedText = match[0]
     const startIndex = match.index
 
@@ -49,15 +54,31 @@ export function transformChatGPTMessageToParts(input: ChatGPTMessageInput): Mess
     }
 
     const ref = citationMap.get(matchedText)
-    if (ref?.url) {
+    const items =
+      ref?.type === 'grouped_webpages'
+        ? ref.items?.length
+          ? ref.items
+          : ref.fallback_items || []
+        : ref
+          ? [ref]
+          : []
+    const sources = items.flatMap((item) => [item, ...(item.supporting_websites || [])])
+    const seenUrls = new Set<string>()
+    for (const source of sources) {
+      if (!isWebSourceUrl(source.url) || seenUrls.has(source.url)) continue
+      seenUrls.add(source.url)
       parts.push({
         type: 'source-url',
         sourceId: crypto.randomUUID(),
-        url: ref.url,
-        title: ref.title,
-        attribution: ref.attribution,
-        snippet: ref.snippet
+        url: source.url,
+        title: source.title,
+        attribution: source.attribution,
+        snippet: source.snippet
       })
+    }
+    // Keep unresolved modern markers in the archive; the UI shows an honest fallback.
+    if (seenUrls.size === 0 && matchedText.startsWith('\uE200')) {
+      parts.push({ type: 'text', text: matchedText })
     }
 
     lastIndex = startIndex + matchedText.length

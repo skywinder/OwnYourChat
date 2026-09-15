@@ -9,7 +9,11 @@ export const useProvidersState = () => useStore<AppState['providers']>((state) =
 
 export const useAuthState = () => useStore<AppState['auth']>((state) => state.auth)
 
+export const useSyncState = () => useStore<AppState['sync']>((state) => state.sync)
+
 export const useSettings = () => useStore<AppState['settings']>((state) => state.settings)
+
+export const useUIState = () => useStore<AppState['ui']>((state) => state.ui)
 
 // Actions
 export const useUpdateProviderState = () =>

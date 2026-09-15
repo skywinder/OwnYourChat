@@ -16,7 +16,11 @@ import { preloadBridge } from '@zubridge/electron/preload'
 const api: ElectronAPI = {
   // Conversation operations
   conversations: {
-    list: (options?: { limit?: number; offset?: number }) =>
+    list: (options?: {
+      limit?: number
+      offset?: number
+      provider?: 'chatgpt' | 'claude' | 'perplexity'
+    }) =>
       ipcRenderer.invoke(IPC_CHANNELS.CONVERSATIONS_LIST, options) as Promise<{
         items: Conversation[]
         total: number
@@ -42,11 +46,24 @@ const api: ElectronAPI = {
         hasMore: boolean
         oldestOrderIndex: number | null
       }>,
-    search: (query: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.CONVERSATIONS_SEARCH, query) as Promise<{
+    search: (
+      query: string,
+      options?: {
+        provider?: 'chatgpt' | 'claude' | 'perplexity'
+        caseInsensitive?: boolean
+        searchInMessages?: boolean
+      }
+    ) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CONVERSATIONS_SEARCH, query, options) as Promise<{
         items: Conversation[]
         total: number
         hasMore: boolean
+      }>,
+    getProviderCounts: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.CONVERSATIONS_PROVIDER_COUNTS) as Promise<{
+        chatgpt: number
+        claude: number
+        perplexity: number
       }>,
     refresh: (id: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.CONVERSATIONS_REFRESH, id) as Promise<{
@@ -83,7 +100,8 @@ const api: ElectronAPI = {
     login: (provider: 'chatgpt' | 'claude' | 'perplexity') =>
       ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGIN, provider),
     logout: (provider?: 'chatgpt' | 'claude' | 'perplexity') =>
-      ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT, provider)
+      ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT, provider),
+    cancelConnection: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_CANCEL_CONNECTION)
   },
 
   // Settings operations
@@ -96,13 +114,15 @@ const api: ElectronAPI = {
         mcpEnabled: boolean
         mcpPort: number
       }>,
-    set: (settings: Partial<{
-      syncIntervalMinutes: number
-      autoSync: boolean
-      exportPath: string
-      mcpEnabled: boolean
-      mcpPort: number
-    }>) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET, settings)
+    set: (
+      settings: Partial<{
+        syncIntervalMinutes: number
+        autoSync: boolean
+        exportPath: string
+        mcpEnabled: boolean
+        mcpPort: number
+      }>
+    ) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET, settings)
   },
 
   // User preferences operations

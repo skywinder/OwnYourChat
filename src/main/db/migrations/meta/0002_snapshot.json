@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "44ece9b6-7678-48c8-aac3-44f1d49cea3d",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "b8ca63f9-d31d-48c7-8155-8ecd2f49e85b",
+  "prevId": "5c605a4e-82f5-4d64-8a84-e1c5ac811341",
   "tables": {
     "attachments": {
       "name": "attachments",
@@ -99,13 +99,7 @@
           "autoincrement": false
         }
       },
-      "indexes": {
-        "attachments_file_id_unique": {
-          "name": "attachments_file_id_unique",
-          "columns": ["file_id"],
-          "isUnique": true
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "attachments_message_id_messages_id_fk": {
           "name": "attachments_message_id_messages_id_fk",
@@ -283,7 +277,13 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "conversation_id_idx": {
+          "name": "conversation_id_idx",
+          "columns": ["conversation_id"],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "messages_conversation_id_conversations_id_fk": {
           "name": "messages_conversation_id_conversations_id_fk",
@@ -422,6 +422,21 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "show_debug_panel": {
+          "name": "show_debug_panel",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "export_settings": {
+          "name": "export_settings",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

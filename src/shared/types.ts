@@ -58,6 +58,11 @@ export interface AppState {
     mcpPort: number
   }
 
+  // UI state
+  ui: {
+    connectingProvider: 'chatgpt' | 'claude' | 'perplexity' | null
+  }
+
   // Actions
   updateProviderState: (
     provider: 'chatgpt' | 'claude' | 'perplexity',
@@ -66,6 +71,7 @@ export interface AppState {
   updateSyncState: (state: Partial<AppState['sync']>) => void
   updateSettings: (settings: Partial<AppState['settings']>) => void
   setAuthState: (auth: Partial<AppState['auth']>) => void
+  setConnectingProvider: (provider: 'chatgpt' | 'claude' | 'perplexity' | null) => void
 }
 
 export interface Conversation {
@@ -164,6 +170,7 @@ export const enum IPC_CHANNELS {
   CONVERSATIONS_GET = 'conversations:get',
   CONVERSATIONS_GET_MESSAGES_PAGE = 'conversations:get-messages-page',
   CONVERSATIONS_SEARCH = 'conversations:search',
+  CONVERSATIONS_PROVIDER_COUNTS = 'conversations:provider-counts',
   CONVERSATIONS_REFRESH = 'conversations:refresh',
 
   // Export
@@ -177,6 +184,7 @@ export const enum IPC_CHANNELS {
   AUTH_STATUS_CHANGED = 'auth:status-changed',
   AUTH_LOGIN = 'auth:login',
   AUTH_LOGOUT = 'auth:logout',
+  AUTH_CANCEL_CONNECTION = 'auth:cancel-connection',
 
   // Debug
   DEBUG_TOGGLE_CHATGPT_VIEW = 'debug:toggle-chatgpt-view',
@@ -214,7 +222,11 @@ export const enum IPC_CHANNELS {
 // ElectronAPI type definition for window.api
 export interface ElectronAPI {
   conversations: {
-    list: (options?: { limit?: number; offset?: number }) => Promise<{
+    list: (options?: {
+      limit?: number
+      offset?: number
+      provider?: 'chatgpt' | 'claude' | 'perplexity'
+    }) => Promise<{
       items: Conversation[]
       total: number
       hasMore: boolean
@@ -236,10 +248,22 @@ export interface ElectronAPI {
       hasMore: boolean
       oldestOrderIndex: number | null
     }>
-    search: (query: string) => Promise<{
+    search: (
+      query: string,
+      options?: {
+        provider?: 'chatgpt' | 'claude' | 'perplexity'
+        caseInsensitive?: boolean
+        searchInMessages?: boolean
+      }
+    ) => Promise<{
       items: Conversation[]
       total: number
       hasMore: boolean
+    }>
+    getProviderCounts: () => Promise<{
+      chatgpt: number
+      claude: number
+      perplexity: number
     }>
     refresh: (id: string) => Promise<{ conversation: Conversation; messages: Message[] } | null>
   }
@@ -255,6 +279,7 @@ export interface ElectronAPI {
   auth: {
     login: (provider: 'chatgpt' | 'claude' | 'perplexity') => Promise<{ success: boolean }>
     logout: (provider?: 'chatgpt' | 'claude' | 'perplexity') => Promise<{ success: boolean }>
+    cancelConnection: () => Promise<void>
   }
   settings: {
     get: () => Promise<{

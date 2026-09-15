@@ -16,6 +16,7 @@ import { setupIpcHandlers } from './ipc'
 import { stopSyncScheduler } from './sync/scheduler'
 import { shell } from 'electron'
 import { providerRegistry } from './sync/providers/registry'
+import { viewBoundsManager } from './view-bounds-manager'
 import { store } from './store'
 import { createZustandBridge } from '@zubridge/electron/main'
 import { startMcpServer, stopMcpServer } from './mcp/server'
@@ -221,6 +222,7 @@ function createWindow(): void {
     width: 900,
     height: 670,
     show: false,
+    titleBarStyle: 'hidden',
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -331,6 +333,9 @@ app.whenReady().then(async () => {
       console.error('[App] Failed to start MCP server:', error)
     }
   }
+
+  // Initialize view bounds manager (reads debug panel state from database)
+  await viewBoundsManager.init()
 
   // Initialize provider registry and start connected providers
   console.log('[App] Initializing provider registry...')

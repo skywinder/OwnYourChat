@@ -1,4 +1,4 @@
-import { eq, like, desc, max, lt, and, asc, ne, count, or } from 'drizzle-orm'
+import { eq, desc, max, lt, and, asc, ne, count, or, sql } from 'drizzle-orm'
 import { getDatabase } from './index'
 import { conversations, messages, attachments, syncState, userPreferences } from './schema'
 import type { NewConversation, NewMessage, NewAttachment } from './schema'
@@ -14,26 +14,64 @@ export async function countConversations(): Promise<number> {
 export async function listConversations(options?: {
   limit?: number
   offset?: number
+  provider?: 'chatgpt' | 'claude' | 'perplexity'
 }): Promise<{ items: Conversation[]; total: number; hasMore: boolean }> {
   const db = getDatabase()
   const limit = options?.limit ?? 50
   const offset = options?.offset ?? 0
 
-  const [results, total] = await Promise.all([
-    db
-      .select()
-      .from(conversations)
-      .orderBy(desc(conversations.updatedAt))
-      .limit(limit)
-      .offset(offset),
-    countConversations()
+  const whereClause = options?.provider ? eq(conversations.provider, options.provider) : undefined
+
+  const [results, totalResult] = await Promise.all([
+    whereClause
+      ? db
+          .select()
+          .from(conversations)
+          .where(whereClause)
+          .orderBy(desc(conversations.updatedAt))
+          .limit(limit)
+          .offset(offset)
+      : db
+          .select()
+          .from(conversations)
+          .orderBy(desc(conversations.updatedAt))
+          .limit(limit)
+          .offset(offset),
+    whereClause
+      ? db.select({ count: count() }).from(conversations).where(whereClause)
+      : db.select({ count: count() }).from(conversations)
   ])
+
+  const total = totalResult[0]?.count ?? 0
 
   return {
     items: results.map(mapConversation),
     total,
     hasMore: offset + results.length < total
   }
+}
+
+export async function getProviderCounts(): Promise<{
+  chatgpt: number
+  claude: number
+  perplexity: number
+}> {
+  const db = getDatabase()
+  const results = await db
+    .select({
+      provider: conversations.provider,
+      count: count()
+    })
+    .from(conversations)
+    .groupBy(conversations.provider)
+
+  const counts = { chatgpt: 0, claude: 0, perplexity: 0 }
+  for (const row of results) {
+    if (row.provider === 'chatgpt' || row.provider === 'claude' || row.provider === 'perplexity') {
+      counts[row.provider] = row.count
+    }
+  }
+  return counts
 }
 
 export async function getConversation(id: string): Promise<Conversation | null> {
@@ -170,15 +208,49 @@ export async function getMessagesPage(
 }
 
 export async function searchConversations(
-  query: string
+  query: string,
+  options?: {
+    provider?: 'chatgpt' | 'claude' | 'perplexity'
+    caseInsensitive?: boolean
+    searchInMessages?: boolean
+  }
 ): Promise<{ items: Conversation[]; total: number; hasMore: boolean }> {
   const db = getDatabase()
-  const searchPattern = `%${query}%`
+  const caseInsensitive = options?.caseInsensitive ?? true
+  const searchInMessages = options?.searchInMessages ?? false
+
+  // unicode_lower is a custom SQLite function that uses JS toLowerCase() for proper Unicode support
+  // INSTR does binary comparison for substring matching
+  const titleCondition = caseInsensitive
+    ? sql`INSTR(unicode_lower(${conversations.title}), ${query.toLowerCase()}) > 0`
+    : sql`INSTR(${conversations.title}, ${query}) > 0`
+
+  let searchCondition
+  if (searchInMessages) {
+    // Also search in message content using EXISTS subquery
+    const messageCondition = caseInsensitive
+      ? sql`INSTR(unicode_lower(${messages.parts}), ${query.toLowerCase()}) > 0`
+      : sql`INSTR(${messages.parts}, ${query}) > 0`
+
+    const hasMatchingMessage = sql`EXISTS (
+      SELECT 1 FROM ${messages}
+      WHERE ${messages.conversationId} = ${conversations.id}
+      AND ${messageCondition}
+    )`
+
+    searchCondition = or(titleCondition, hasMatchingMessage)
+  } else {
+    searchCondition = titleCondition
+  }
+
+  const whereClause = options?.provider
+    ? and(searchCondition, eq(conversations.provider, options.provider))
+    : searchCondition
 
   const results = await db
     .select()
     .from(conversations)
-    .where(like(conversations.title, searchPattern))
+    .where(whereClause)
     .orderBy(desc(conversations.updatedAt))
     .limit(50)
 
@@ -191,16 +263,23 @@ export async function searchConversations(
 
 export async function searchConversationsByKeywords(
   keywords: string[],
-  options?: { limit?: number }
+  options?: { limit?: number; caseInsensitive?: boolean }
 ): Promise<{ items: Conversation[]; total: number }> {
   const db = getDatabase()
   const limit = options?.limit ?? 50
+  const caseInsensitive = options?.caseInsensitive ?? true
 
   if (keywords.length === 0) {
     return { items: [], total: 0 }
   }
 
-  const conditions = keywords.map((kw) => like(conversations.title, `%${kw}%`))
+  // unicode_lower is a custom SQLite function that uses JS toLowerCase() for proper Unicode support
+  // INSTR does binary comparison for substring matching
+  const conditions = keywords.map((kw) =>
+    caseInsensitive
+      ? sql`INSTR(unicode_lower(${conversations.title}), ${kw.toLowerCase()}) > 0`
+      : sql`INSTR(${conversations.title}, ${kw}) > 0`
+  )
 
   const results = await db
     .select()
@@ -217,7 +296,7 @@ export async function searchConversationsByKeywords(
 
 export async function searchMessagesByKeywords(
   keywords: string[],
-  options?: { limit?: number }
+  options?: { limit?: number; caseInsensitive?: boolean }
 ): Promise<{
   items: Array<{
     message: Message
@@ -228,12 +307,19 @@ export async function searchMessagesByKeywords(
 }> {
   const db = getDatabase()
   const limit = options?.limit ?? 50
+  const caseInsensitive = options?.caseInsensitive ?? true
 
   if (keywords.length === 0) {
     return { items: [], total: 0 }
   }
 
-  const conditions = keywords.map((kw) => like(messages.parts, `%${kw}%`))
+  // unicode_lower is a custom SQLite function that uses JS toLowerCase() for proper Unicode support
+  // INSTR does binary comparison for substring matching
+  const conditions = keywords.map((kw) =>
+    caseInsensitive
+      ? sql`INSTR(unicode_lower(${messages.parts}), ${kw.toLowerCase()}) > 0`
+      : sql`INSTR(${messages.parts}, ${kw}) > 0`
+  )
 
   const results = await db
     .select({
