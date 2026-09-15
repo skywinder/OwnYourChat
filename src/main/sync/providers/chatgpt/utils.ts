@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import type { MessagePart } from '@shared/types'
+import type { MessagePart, FileCitation } from '@shared/types'
 import { CHATGPT_CITATION_PATTERN, isWebSourceUrl } from '../../../../shared/citations'
 
 type ChatGPTWebSource = {
@@ -12,7 +12,10 @@ type ChatGPTWebSource = {
 
 export interface ChatGPTContentReference extends ChatGPTWebSource {
   matched_text: string
-  type: 'webpage' | 'webpage_extended' | 'image_inline' | 'grouped_webpages'
+  type: 'webpage' | 'webpage_extended' | 'image_inline' | 'grouped_webpages' | 'file'
+  id?: string
+  name?: string
+  cloud_doc_url?: string | null
   items?: ChatGPTWebSource[] | null
   fallback_items?: ChatGPTWebSource[] | null
 }
@@ -29,6 +32,16 @@ export function transformChatGPTMessageToParts(input: ChatGPTMessageInput): Mess
     return [{ type: 'text', text: content }]
   }
 
+  const fileCitations: FileCitation[] = contentReferences
+    .filter((ref) => ref.type === 'file' && ref.matched_text)
+    .map((ref) => ({
+      marker: ref.matched_text,
+      ...(typeof ref.id === 'string' && /^file[_-][a-zA-Z0-9_-]+$/.test(ref.id)
+        ? { fileId: ref.id }
+        : {}),
+      ...(typeof ref.name === 'string' ? { filename: ref.name } : {}),
+      ...(isWebSourceUrl(ref.cloud_doc_url ?? undefined) ? { url: ref.cloud_doc_url! } : {})
+    }))
   const parts: MessagePart[] = []
   const citationMap = new Map<string, ChatGPTContentReference>()
 
@@ -91,5 +104,9 @@ export function transformChatGPTMessageToParts(input: ChatGPTMessageInput): Mess
     }
   }
 
-  return parts
+  return parts.map((part) => {
+    if (part.type !== 'text') return part
+    const references = fileCitations.filter((ref) => part.text.includes(ref.marker))
+    return references.length ? { ...part, fileCitations: references } : part
+  })
 }

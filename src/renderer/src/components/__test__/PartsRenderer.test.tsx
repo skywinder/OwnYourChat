@@ -77,3 +77,65 @@ describe('PartsRenderer citations', () => {
     expect(html).not.toContain('javascript:')
   })
 })
+
+describe('file links and embedded content', () => {
+  it('makes a saved file reference a named button', () => {
+    const marker = '\uE200filecite\uE202turn0file1\uE202L42-L98\uE201'
+    const html = render([
+      {
+        type: 'text',
+        text: marker,
+        fileCitations: [{ marker, fileId: 'file_test', filename: 'report.pdf' }]
+      }
+    ])
+    expect(html).toContain('<button')
+    expect(html).toContain('report.pdf · lines 42–98')
+    expect(html).not.toContain('turn0file1')
+  })
+  it('shows names for entities/products and readable fallbacks for widgets and memory', () => {
+    const markers = [
+      '\uE200entity\uE202["place","El Pit","cenote"]\uE201',
+      '\uE200product_entity\uE202["turn0product0","Skates"]\uE201',
+      '\uE200products\uE202{"selections":[["turn0product1","Charger"]]}\uE201',
+      '\uE200image_group\uE202{"query":["Dive computer"]}\uE201',
+      '\uE200memcite\uE201',
+      '\uE200map\uE201',
+      '\uE200finance\uE202turn0finance0\uE201',
+      '\uE200future_widget\uE202{"payload":"hidden"}\uE201',
+      '\uE200genui\uE202{"ask_user_input":{"questions":[{"question":"Which?","options":["A","B"]}]}}\uE201'
+    ]
+    const html = render([{ type: 'text', text: markers.join(' ') }])
+    for (const name of [
+      'El Pit',
+      'Skates',
+      'Charger',
+      'Images: Dive computer',
+      'Memory reference',
+      'Map',
+      'Financial chart',
+      'Embedded content',
+      'Which? / A / B'
+    ])
+      expect(html).toContain(name)
+    expect(html).not.toMatch(/[\uE200-\uE206]|turn0|"payload"/)
+  })
+  it('removes annotation wrappers and handles older citations without touching code or logos', () => {
+    const marker = '\uE600cite\uE602turn2view0\uE601'
+    const text = `\uE203Keep **this text**\uE204\uE206 ${marker} \uE142cite\uE142turn6view0\uE141 Apple \uF8FF`
+    const html = render([{ type: 'text', text: `${text}\n\n\`${marker}\`` }])
+    expect(html).toContain('Keep <strong>this text</strong>')
+    expect(html.match(/Source unavailable/g)).toHaveLength(2)
+    expect(html).toContain('Apple \uF8FF')
+    expect(html).toContain(`<code>${marker}</code>`)
+  })
+})
+
+it('keeps complete URL widget payloads intact before GFM autolinking', () => {
+  const marker =
+    '\uE200url\uE202A [useful] **guide**\uE202https://www.example.com/a_b?q=one&x=two\uE201'
+  const html = render([{ type: 'text', text: `Text ${marker} after.\n\n\`${marker}\`` }])
+  expect(html).toContain('href="https://www.example.com/a_b?q=one&amp;x=two"')
+  expect(html).toContain('A [useful] **guide**')
+  expect(html).toContain(`after.</p>`)
+  expect(html.split('\uE200')).toHaveLength(2) // The literal code example remains.
+})

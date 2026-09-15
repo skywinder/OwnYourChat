@@ -260,3 +260,22 @@ describe('transformChatGPTMessageToParts', () => {
     expect(result[1].type).toBe('source-url')
   })
 })
+
+describe('file citation metadata', () => {
+  it('preserves exact file IDs on text without guessing from turn IDs', () => {
+    const marker = '\uE200filecite\uE202turn0file1\uE202L42-L98\uE201'
+    const parts = transformChatGPTMessageToParts({
+      content: `Result ${marker}`,
+      contentReferences: [
+        { type: 'file', matched_text: marker, id: 'file_test', name: 'report.pdf' }
+      ]
+    })
+    expect(parts).toEqual([
+      {
+        type: 'text',
+        text: `Result ${marker}`,
+        fileCitations: [{ marker, fileId: 'file_test', filename: 'report.pdf' }]
+      }
+    ])
+  })
+})

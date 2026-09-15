@@ -1082,9 +1082,12 @@ export class ChatGPTProvider extends BaseProvider<ChatGPTMetadata> {
           const rawRefs = msg.metadata?.content_references;
           if (rawRefs && Array.isArray(rawRefs) && rawRefs.length > 0) {
             contentReferences = rawRefs
-              .filter(ref => ref.type === 'webpage' || ref.type === 'webpage_extended' || ref.type === 'image_inline' || ref.type === 'grouped_webpages')
+              .filter(ref => ref.type === 'webpage' || ref.type === 'webpage_extended' || ref.type === 'image_inline' || ref.type === 'grouped_webpages' || ref.type === 'file')
               .map(ref => ({
                 matched_text: ref.matched_text,
+                id: ref.id,
+                name: ref.name,
+                cloud_doc_url: ref.cloud_doc_url,
                 type: ref.type,
                 title: ref.title,
                 url: ref.url,
