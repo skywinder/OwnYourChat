@@ -43,6 +43,34 @@ describe('PartsRenderer citations', () => {
     expect(html.split(marker)).toHaveLength(3)
     expect(html).not.toContain('Source unavailable')
   })
+  it('renders archived file citations with line ranges alongside web citations', () => {
+    const marker = (range: string) => `\uE200filecite\uE202turn0file1\uE202${range}\uE201`
+    const html = render([
+      {
+        type: 'text',
+        text: `Results ${marker('L42-L98')} ${marker('L165-L191')} ${marker('L197-L234')}. `
+      },
+      source
+    ])
+    expect(html).toContain('File · lines 42–98')
+    expect(html).toContain('File · lines 165–191')
+    expect(html).toContain('File · lines 197–234')
+    expect(html).not.toMatch(/filecite|turn0file1|[\uE200-\uE202]/)
+    expect(html.match(/<a /g)).toHaveLength(1)
+    expect(html).toContain('href="https://example.com/paper"')
+  })
+  it('handles file citations without line metadata and preserves literal file markers in code', () => {
+    const marker = '\uE200filecite\uE202turn0file1\uE201'
+    const html = render([
+      {
+        type: 'text',
+        text: `# Heading ${marker}\n\n- Item ${marker}\n\n| Source |\n| --- |\n| ${marker} |\n\n\`${marker}\`\n\n\`\`\`text\n${marker}\n\`\`\``
+      }
+    ])
+    expect(html.match(/>File reference<\/span>/g)).toHaveLength(3)
+    expect(html.split(marker)).toHaveLength(3)
+    expect(html).not.toContain('<a ')
+  })
   it('does not create clickable citations for invalid or executable URLs', () => {
     const html = render([{ ...source, url: 'javascript:alert(1)' }])
     expect(html).toContain('[Source unavailable]')
