@@ -6,11 +6,13 @@ import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
-import type { MessagePart, SourceUrlPart } from '../../../shared/types'
+import type { MessagePart, SourceUrlPart, FileCitation } from '../../../shared/types'
 import { CHATGPT_DISPLAY_CITATION_PATTERN } from '../../../shared/citations'
 import { buildMessageMarkdown } from '../lib/message-markdown'
 import { CitationPill } from './CitationPill'
 import { FileCitationPill } from './FileCitationPill'
+import { remarkChatGPTMarkers } from '../lib/remark-chatgpt-markers'
+import { describeChatGPTMarker } from '../lib/chatgpt-markers'
 
 // Custom sanitization schema
 const sanitizeSchema: Schema = {
@@ -22,6 +24,7 @@ const sanitizeSchema: Schema = {
     'h5',
     'h6',
     'p',
+    'span',
     'blockquote',
     'ul',
     'ol',
@@ -62,7 +65,17 @@ interface PartsRendererProps {
 
 // Render a single markdown text part
 const MarkdownPart = memo(
-  ({ content, sources }: { content: string; sources: Map<string, SourceUrlPart> }) => {
+  ({
+    content,
+    sources,
+    fileCitations,
+    messageId
+  }: {
+    content: string
+    sources: Map<string, SourceUrlPart>
+    fileCitations: Map<string, FileCitation>
+    messageId: string
+  }) => {
     // Helper to process children
     const processChildren = (children: React.ReactNode): React.ReactNode => {
       return Children.map(children, (child) => {
@@ -71,11 +84,31 @@ const MarkdownPart = memo(
           let offset = 0
           for (const match of child.matchAll(new RegExp(CHATGPT_DISPLAY_CITATION_PATTERN))) {
             nodes.push(child.slice(offset, match.index))
+            const description = describeChatGPTMarker(match[0])
             nodes.push(
               match[0].startsWith('\uE200filecite\uE202') ? (
-                <FileCitationPill key={`file-${match.index}`} marker={match[0]} />
-              ) : (
+                <FileCitationPill
+                  key={`file-${match.index}`}
+                  marker={match[0]}
+                  reference={fileCitations.get(match[0])}
+                  messageId={messageId}
+                />
+              ) : description.kind === 'citation' ? (
                 <CitationPill key={`missing-${match.index}`} reference={{}} />
+              ) : description.url ? (
+                <a
+                  key={`marker-${match.index}`}
+                  href={description.url}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void window.api?.shell.openExternal(description.url!)
+                  }}
+                >
+                  {description.label}
+                </a>
+              ) : (
+                <span key={`marker-${match.index}`}>{description.label}</span>
               )
             )
             offset = match.index + match[0].length
@@ -96,7 +129,11 @@ const MarkdownPart = memo(
 
     return (
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+        remarkPlugins={[
+          remarkChatGPTMarkers,
+          remarkGfm,
+          [remarkMath, { singleDollarTextMath: false }]
+        ]}
         rehypePlugins={[
           [rehypeSanitize, sanitizeSchema],
           [rehypeKatex, { output: 'html' }]
@@ -177,14 +214,24 @@ const MarkdownPart = memo(
     )
   },
   (prevProps, nextProps) =>
-    prevProps.content === nextProps.content && prevProps.sources === nextProps.sources
+    prevProps.content === nextProps.content &&
+    prevProps.sources === nextProps.sources &&
+    prevProps.fileCitations === nextProps.fileCitations &&
+    prevProps.messageId === nextProps.messageId
 )
 
 MarkdownPart.displayName = 'MarkdownPart'
 
-export const PartsRenderer = memo(({ parts }: PartsRendererProps) => {
-  const { content, sources } = useMemo(() => buildMessageMarkdown(parts), [parts])
-  return <MarkdownPart content={content} sources={sources} />
+export const PartsRenderer = memo(({ parts, messageId }: PartsRendererProps) => {
+  const { content, sources, fileCitations } = useMemo(() => buildMessageMarkdown(parts), [parts])
+  return (
+    <MarkdownPart
+      content={content}
+      sources={sources}
+      fileCitations={fileCitations}
+      messageId={messageId}
+    />
+  )
 })
 
 PartsRenderer.displayName = 'PartsRenderer'
